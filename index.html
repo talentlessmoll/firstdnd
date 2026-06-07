@@ -47,7 +47,7 @@
             .layout { grid-template-columns: 1fr; }
         }
 
-        /* Player wrapper keeping 16:9 aspect ratio */
+        /* Player viewport */
         .viewport {
             background: #000;
             border-radius: 12px;
@@ -129,16 +129,14 @@
 
     <header>
         <h1>WatchFooty Lab</h1>
-        <div id="status">Polling live directory...</div>
+        <div id="status">Routing through proxy...</div>
     </header>
 
     <div class="layout">
-        <!-- Embed Screen -->
         <div class="viewport">
             <iframe id="screen" src="" allow="encrypted-media" allowfullscreen></iframe>
         </div>
 
-        <!-- Directory Feed -->
         <div class="sidebar">
             <h2>Live Streams Across All Sports</h2>
             <div id="feed-target"></div>
@@ -146,9 +144,11 @@
     </div>
 
     <script>
-        // Adjust host domain if watchfooty.ru blocks direct cross-origin asset serving
         const BASE_DOMAIN = 'https://watchfooty.ru'; 
-        const API_ENDPOINT = `${BASE_DOMAIN}/api/v1/matches/all/live`;
+        const TARGET_API = `${BASE_DOMAIN}/api/v1/matches/all/live`;
+        
+        // Bypasses GitHub Pages CORS restriction using a public proxy tunnel
+        const API_ENDPOINT = 'https://corsproxy.io/?' + encodeURIComponent(TARGET_API);
         
         const screenFrame = document.getElementById('screen');
         const feedTarget = document.getElementById('feed-target');
@@ -156,29 +156,29 @@
 
         async function fetchLiveMatches() {
             try {
+                statusDisplay.innerText = 'Fetching live data via proxy...';
                 const response = await fetch(API_ENDPOINT);
                 if (!response.ok) throw new Error(`HTTP status error: ${response.status}`);
                 
                 const data = await response.json();
                 
-                // Expecting either an array directly or an object holding the match collection
-                const matches = Array.isArray(data) ? data : (data.matches || []);
+                // Fallbacks handle direct arrays or objects nested with match parameters
+                const matches = Array.isArray(data) ? data : (data.matches || data.data || []);
 
                 if (matches.length === 0) {
                     feedTarget.innerHTML = '<div class="empty-state">No matches currently live. Check back later.</div>';
-                    statusDisplay.innerText = 'Connected. System idle (0 live streams).';
+                    statusDisplay.innerText = 'Connected via proxy. No live streams found.';
                     return;
                 }
 
                 statusDisplay.innerText = `Connected. Rendering ${matches.length} streams.`;
-                feedTarget.innerHTML = ''; // Wipe old list
+                feedTarget.innerHTML = ''; 
 
                 matches.forEach(match => {
                     const card = document.createElement('div');
                     card.className = 'match-card';
                     
-                    // Standard properties derived from typical sport API schemas
-                    const title = match.title || `${match.homeTeam || 'Team A'} vs ${match.awayTeam || 'Team B'}`;
+                    const title = match.title || (match.homeTeam && match.awayTeam ? `${match.homeTeam} vs ${match.awayTeam}` : 'Unknown Match');
                     const sportType = match.sport || 'Live Event';
                     const views = match.viewers ? `· ${match.viewers} watching` : '';
 
@@ -190,10 +190,10 @@
                         </div>
                     `;
 
-                    // Handle embed mapping using their documented ID system
                     card.addEventListener('click', () => {
-                        // WatchFooty embeds typically target either a specific player route or the main site match frame
-                        screenFrame.src = `${BASE_DOMAIN}/api/v1/match/${match.id || match.gameID}`;
+                        const matchId = match.id || match.gameID;
+                        // Mounts the proper embed stream layout to the viewport
+                        screenFrame.src = `${BASE_DOMAIN}/api/v1/match/${matchId}`;
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                     });
 
@@ -202,18 +202,16 @@
 
             } catch (error) {
                 console.error('Fetch operation failed:', error);
-                statusDisplay.innerText = 'CORS restriction or network block detected.';
-                
-                // Fallback UI to check if structure works even without live backend response
+                statusDisplay.innerText = 'Proxy failed or API structure mismatch.';
                 feedTarget.innerHTML = `
                     <div class="empty-state" style="color: #ff5252;">
-                        Failed to automatically pull API feeds. If this is a local Termux session, verify your CORS settings.
+                        The CORS proxy couldn't extract data. The destination server might be down or refusing third-party proxies.
                     </div>
                 `;
             }
         }
 
-        // Initialize display loop
+        // Run routine
         fetchLiveMatches();
     </script>
 </body>
