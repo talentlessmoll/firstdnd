@@ -1,22 +1,220 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Embedded Site</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WatchFooty Test Dashboard</title>
     <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            overflow: hidden;
+        :root {
+            --bg: #0f111a;
+            --surface: #1a1d29;
+            --accent: #00e676;
+            --text: #ffffff;
+            --text-muted: #8f94a6;
         }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1400px;
+            margin: 0 auto 20px auto;
+            border-bottom: 1px solid #2a2e3d;
+            padding-bottom: 15px;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
+        
+        #status { font-size: 0.85rem; color: var(--text-muted); }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        @media (max-width: 950px) {
+            .layout { grid-template-columns: 1fr; }
+        }
+
+        /* Player wrapper keeping 16:9 aspect ratio */
+        .viewport {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            position: sticky;
+            top: 20px;
+            border: 1px solid #2a2e3d;
+        }
+
         iframe {
             width: 100%;
             height: 100%;
             border: none;
         }
+
+        /* Sidebar & Match Cards */
+        .sidebar {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid #2a2e3d;
+        }
+
+        .sidebar h2 {
+            margin-top: 0;
+            font-size: 1.1rem;
+            letter-spacing: 0.5px;
+        }
+
+        .match-card {
+            background: #242838;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-left: 4px solid transparent;
+        }
+
+        .match-card:hover {
+            background: #2e3347;
+            border-left-color: var(--accent);
+            transform: translateX(2px);
+        }
+
+        .match-teams {
+            font-weight: 600;
+            font-size: 0.95rem;
+            margin-bottom: 6px;
+        }
+
+        .match-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .live-tag {
+            color: var(--accent);
+            font-weight: bold;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
-    <iframe src="https://websim.ai/@osayuki/ai-generated-dnd-adventure/10"></iframe>
+
+    <header>
+        <h1>WatchFooty Lab</h1>
+        <div id="status">Polling live directory...</div>
+    </header>
+
+    <div class="layout">
+        <!-- Embed Screen -->
+        <div class="viewport">
+            <iframe id="screen" src="" allow="encrypted-media" allowfullscreen></iframe>
+        </div>
+
+        <!-- Directory Feed -->
+        <div class="sidebar">
+            <h2>Live Streams Across All Sports</h2>
+            <div id="feed-target"></div>
+        </div>
+    </div>
+
+    <script>
+        // Adjust host domain if watchfooty.ru blocks direct cross-origin asset serving
+        const BASE_DOMAIN = 'https://watchfooty.ru'; 
+        const API_ENDPOINT = `${BASE_DOMAIN}/api/v1/matches/all/live`;
+        
+        const screenFrame = document.getElementById('screen');
+        const feedTarget = document.getElementById('feed-target');
+        const statusDisplay = document.getElementById('status');
+
+        async function fetchLiveMatches() {
+            try {
+                const response = await fetch(API_ENDPOINT);
+                if (!response.ok) throw new Error(`HTTP status error: ${response.status}`);
+                
+                const data = await response.json();
+                
+                // Expecting either an array directly or an object holding the match collection
+                const matches = Array.isArray(data) ? data : (data.matches || []);
+
+                if (matches.length === 0) {
+                    feedTarget.innerHTML = '<div class="empty-state">No matches currently live. Check back later.</div>';
+                    statusDisplay.innerText = 'Connected. System idle (0 live streams).';
+                    return;
+                }
+
+                statusDisplay.innerText = `Connected. Rendering ${matches.length} streams.`;
+                feedTarget.innerHTML = ''; // Wipe old list
+
+                matches.forEach(match => {
+                    const card = document.createElement('div');
+                    card.className = 'match-card';
+                    
+                    // Standard properties derived from typical sport API schemas
+                    const title = match.title || `${match.homeTeam || 'Team A'} vs ${match.awayTeam || 'Team B'}`;
+                    const sportType = match.sport || 'Live Event';
+                    const views = match.viewers ? `· ${match.viewers} watching` : '';
+
+                    card.innerHTML = `
+                        <div class="match-teams">${title}</div>
+                        <div class="match-meta">
+                            <span>${sportType}</span>
+                            <span class="live-tag">● LIVE ${views}</span>
+                        </div>
+                    `;
+
+                    // Handle embed mapping using their documented ID system
+                    card.addEventListener('click', () => {
+                        // WatchFooty embeds typically target either a specific player route or the main site match frame
+                        screenFrame.src = `${BASE_DOMAIN}/api/v1/match/${match.id || match.gameID}`;
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    });
+
+                    feedTarget.appendChild(card);
+                });
+
+            } catch (error) {
+                console.error('Fetch operation failed:', error);
+                statusDisplay.innerText = 'CORS restriction or network block detected.';
+                
+                // Fallback UI to check if structure works even without live backend response
+                feedTarget.innerHTML = `
+                    <div class="empty-state" style="color: #ff5252;">
+                        Failed to automatically pull API feeds. If this is a local Termux session, verify your CORS settings.
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize display loop
+        fetchLiveMatches();
+    </script>
 </body>
 </html>
